@@ -5306,35 +5306,15 @@ ACED.employees={
   /* ================================================================
      5. SMOOTH PAGE TRANSITIONS + NAV HOOK
      ================================================================ */
-  function wrapNavGo() {
-    if (ACED.nav._enhWrapped) return;
-    var original = ACED.nav.go.bind(ACED.nav);
-    ACED.nav.go = function (section) {
-      var current = document.querySelector('.section.active');
-      if (current) {
-        current.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
-        current.style.opacity = '0';
-        current.style.transform = 'translateY(6px)';
-      }
-      setTimeout(function () {
-        original(section);
-        var next = document.querySelector('.section.active');
-        if (next) {
-          next.style.opacity = '0';
-          next.style.transform = 'translateY(10px)';
-          next.style.transition = 'none';
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              next.style.transition = 'opacity 0.28s ease, transform 0.28s ease';
-              next.style.opacity = '1';
-              next.style.transform = 'translateY(0)';
-            });
-          });
-        }
-        /* Section-specific side effects */
-        if (section === 'whoisin') {
-          renderWhoisin();
-        }
+  function setupSectionObserver() {
+    var observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') return;
+        var el = mutation.target;
+        if (!el.classList.contains('section') || !el.classList.contains('active')) return;
+        var section = (el.id || '').replace('section-', '');
+        if (!section) return;
+        if (section === 'whoisin') renderWhoisin();
         if (section === 'dashboard') {
           setTimeout(triggerStatCountup, 250);
           setTimeout(function () { animateCards('.stat-card', 80); }, 50);
@@ -5344,9 +5324,11 @@ ACED.employees={
           setTimeout(upgradeClockWidget, 100);
         }
         updateFABState();
-      }, 140);
-    };
-    ACED.nav._enhWrapped = true;
+      });
+    });
+    document.querySelectorAll('.section').forEach(function (sec) {
+      observer.observe(sec, { attributes: true, attributeFilter: ['class'] });
+    });
   }
 
   /* ================================================================
@@ -5807,27 +5789,29 @@ ACED.employees={
     injectBirthdayField();
     attachButtonAnimations();
 
-    /* Wrap ACED.nav.go for smooth transitions */
-    wrapNavGo();
+    /* Section transition observer — no nav.go wrapping */
+    setupSectionObserver();
 
-    /* Hook into auth.onLogin */
-    if (ACED.auth && ACED.auth.onLogin) {
-      var origLogin = ACED.auth.onLogin.bind(ACED.auth);
-      ACED.auth.onLogin = async function (u) {
-        await origLogin(u);
-        setTimeout(function () {
-          /* Celebrate birthdays / anniversaries */
-          checkCelebrations();
-          /* Animate initial dashboard */
-          triggerStatCountup();
-          animateCards('.stat-card', 80);
-          animateCards('.metric-pill', 60);
-          /* Clock widget arc */
-          upgradeClockWidget();
-          updateArcRing();
-          updateFABState();
-        }, 600);
-      };
+    /* Post-login observer: watch login-screen for hidden class */
+    var loginScreen = document.getElementById('login-screen');
+    if (loginScreen) {
+      var loginObserver = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+          if (mutation.attributeName === 'class' && loginScreen.classList.contains('hidden')) {
+            loginObserver.disconnect();
+            setTimeout(function () {
+              checkCelebrations();
+              triggerStatCountup();
+              animateCards('.stat-card', 80);
+              animateCards('.metric-pill', 60);
+              upgradeClockWidget();
+              updateArcRing();
+              updateFABState();
+            }, 600);
+          }
+        });
+      });
+      loginObserver.observe(loginScreen, { attributes: true, attributeFilter: ['class'] });
     }
 
     /* Periodic updates */
